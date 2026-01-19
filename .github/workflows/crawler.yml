@@ -1,0 +1,25 @@
+name: BOCA QA Crawler Test
+
+on:
+  workflow_dispatch:   # 👈 手動執行用
+
+jobs:
+  crawl:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: |
+          pip install requests beautifulsoup4 lxml
+
+      - name: Run crawler
+        run: |
+          python crawler.py
