@@ -79,4 +79,6 @@ def main():
 
 if __name__ == "__main__":
     results = main()        
-    print(results[0])        
+    print("==== SAMPLE ====")
+    print(results[0]["title"])
+    print(results[0]["content"])       
