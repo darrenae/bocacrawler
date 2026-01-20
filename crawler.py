@@ -51,7 +51,8 @@ def main():
         time.sleep(1)
 
     print(f"Total records: {len(results)}")
+    return results  
 
 if __name__ == "__main__":
-    main()
-    print(results[0])
+    results = main()        
+    print(results[0])        
