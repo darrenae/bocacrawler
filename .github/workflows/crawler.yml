@@ -23,3 +23,9 @@ jobs:
       - name: Run crawler
         run: |
           python crawler.py
+          
+      - name: Upload NotebookLM file
+        uses: actions/upload-artifact@v4
+        with:
+          name: boca-visa-notebooklm
+          path: boca_visa_qa.txt
