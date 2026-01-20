@@ -21,6 +21,30 @@ def fetch_list(page):
         })
     return items
 
+def extract_cp_content(soup):
+    section = soup.select_one("section.cp")
+    if not section:
+        return []
+
+    contents = []
+
+    for p in section.find_all("p", recursive=False):
+        text = p.get_text(strip=True)
+        if text:
+            contents.append(text)
+
+    for li in section.select("ol li, ul li"):
+        text = li.get_text(strip=True)
+        if text:
+            contents.append(text)
+
+    if not contents:
+        text = section.get_text(strip=True)
+        if text:
+            contents.append(text)
+
+    return contents
+    
 def fetch_detail(url):
     res = requests.get(url, headers=HEADERS, timeout=15)
     res.raise_for_status()
@@ -28,7 +52,7 @@ def fetch_detail(url):
 
     title = soup.select_one("h2.title span").get_text(strip=True)
     publish = [li.get_text(strip=True) for li in soup.select("ul.publish_info li")]
-    content = [li.get_text(strip=True) for li in soup.select("section.cp ol li")]
+    content = extract_cp_content(soup)
 
     return {
         "title": title,
