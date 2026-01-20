@@ -60,6 +60,24 @@ def fetch_detail(url):
         "content": content,
         "url": url
     }
+    
+def export_for_notebooklm(results, filename="boca_visa_qa.txt"):
+    with open(filename, "w", encoding="utf-8") as f:
+        for item in results:
+            f.write(f"Q: {item['title']}\n\n")
+            f.write("A:\n")
+
+            for line in item["content"]:
+                f.write(f"- {line}\n")
+
+            # 發布資訊（若存在）
+            for info in item.get("publish_info", []):
+                if "發布日期" in info:
+                    f.write(f"\n{info}")
+                    break
+
+            f.write(f"\n來源：{item['url']}\n")
+            f.write("\n" + "=" * 40 + "\n\n")
 
 def main():
     all_items = []
@@ -81,4 +99,5 @@ if __name__ == "__main__":
     results = main()        
     print("==== SAMPLE ====")
     print(results[0]["title"])
-    print(results[0]["content"])       
+    print(results[0]["content"]) 
+    export_for_notebooklm(results)
