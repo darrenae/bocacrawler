@@ -48,7 +48,7 @@ def detect_category(title):
         return "居留簽證"
     if "停留" in title:
         return "停留簽證"
-    return "一般簽證"
+    return "簽證"
 
 
 # ======================
