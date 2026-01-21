@@ -19,7 +19,7 @@ OUTPUT_FILE = "boca_visa_qa.txt"
 
 
 # ======================
-# 共用工具
+# 工具函式
 # ======================
 
 def content_hash(title, content, content_type):
@@ -39,10 +39,8 @@ def save_state(state):
         json.dump(state, f, ensure_ascii=False, indent=2)
 
 
-def detect_category(item):
-    title = item["title"]
-
-    if "電子簽證" in title or "eVisa" in title.lower():
+def detect_category(title):
+    if "電子簽證" in title or "evisa" in title.lower():
         return "電子簽證"
     if "APEC" in title:
         return "APEC 商務卡"
@@ -50,7 +48,6 @@ def detect_category(item):
         return "居留簽證"
     if "停留" in title:
         return "停留簽證"
-
     return "一般簽證"
 
 
@@ -76,10 +73,14 @@ def fetch_list(page):
 
 
 # ======================
-# 內容頁抽取（三型態）
+# 內容抽取（修正版）
 # ======================
 
 def extract_text_content(soup):
+    """
+    只抽真正的文字內容
+    ❌ 明確排除 publish_info
+    """
     section = soup.select_one("section.cp")
     if not section:
         return None
@@ -92,6 +93,8 @@ def extract_text_content(soup):
             contents.append(text)
 
     for li in section.select("ol li, ul li"):
+        if li.find_parent("ul", class_="publish_info"):
+            continue
         text = li.get_text(strip=True)
         if text:
             contents.append(text)
@@ -108,31 +111,30 @@ def extract_table_content(soup):
     if not tables:
         return None
 
-    results = []
+    rows = []
 
     for table in tables:
-        headers = [th.get_text(strip=True) for th in table.find_all("th") if th.get_text(strip=True)]
+        headers = [th.get_text(strip=True) for th in table.find_all("th")]
 
         for tr in table.find_all("tr"):
-            cells = tr.find_all("td")
-            if not cells:
+            tds = tr.find_all("td")
+            if not tds:
                 continue
 
             row = []
-            for i, td in enumerate(cells):
-                value = td.get_text(strip=True)
-                if not value:
+            for i, td in enumerate(tds):
+                cell = td.get_text(strip=True)
+                if not cell:
                     continue
-
                 if i < len(headers):
-                    row.append(f"{headers[i]}：{value}")
+                    row.append(f"{headers[i]}：{cell}")
                 else:
-                    row.append(value)
+                    row.append(cell)
 
             if row:
-                results.append("｜".join(row))
+                rows.append("｜".join(row))
 
-    return results if results else None
+    return rows if rows else None
 
 
 def extract_image_content(soup):
@@ -151,13 +153,20 @@ def extract_image_content(soup):
     return images if images else None
 
 
+# ======================
+# 單一內容頁
+# ======================
+
 def fetch_detail(url):
     res = requests.get(url, headers=HEADERS, timeout=15)
     res.raise_for_status()
     soup = BeautifulSoup(res.text, "lxml")
 
     title = soup.select_one("h2.title span").get_text(strip=True)
-    publish = [li.get_text(strip=True) for li in soup.select("ul.publish_info li")]
+    publish_info = [
+        li.get_text(strip=True)
+        for li in soup.select("ul.publish_info li")
+    ]
 
     table = extract_table_content(soup)
     text = extract_text_content(soup)
@@ -178,9 +187,10 @@ def fetch_detail(url):
 
     return {
         "title": title,
-        "publish_info": publish,
-        "content": content,
+        "category": detect_category(title),
         "content_type": content_type,
+        "content": content,
+        "publish_info": publish_info,
         "url": url
     }
 
@@ -189,12 +199,12 @@ def fetch_detail(url):
 # NotebookLM 輸出
 # ======================
 
-def export_for_notebooklm(items, filename=OUTPUT_FILE):
+def export_for_notebooklm(items):
     if not items:
-        print("No updates. Skip export.")
+        print("No updates.")
         return
 
-    with open(filename, "w", encoding="utf-8") as f:
+    with open(OUTPUT_FILE, "w", encoding="utf-8") as f:
         for item in items:
             f.write(f"[分類]：{item['category']}\n")
 
@@ -216,7 +226,7 @@ def export_for_notebooklm(items, filename=OUTPUT_FILE):
                 for line in item["content"]:
                     f.write(f"- {line}\n")
 
-            for info in item.get("publish_info", []):
+            for info in item["publish_info"]:
                 if "發布日期" in info:
                     f.write(f"\n{info}")
                     break
@@ -241,32 +251,21 @@ def main():
 
     for item in all_items:
         detail = fetch_detail(item["url"])
-        category = detect_category(detail)
-
         h = content_hash(detail["title"], detail["content"], detail["content_type"])
         old = state.get(detail["url"])
 
         if old and old["hash"] == h:
             continue
 
-        record = {
-            "url": detail["url"],
-            "title": detail["title"],
-            "category": category,
-            "content_type": detail["content_type"],
-            "publish_info": detail["publish_info"],
-            "content": detail["content"],
-            "hash": h
-        }
-
-        state[detail["url"]] = record
-        updated.append(record)
+        detail["hash"] = h
+        state[detail["url"]] = detail
+        updated.append(detail)
 
         print(f"Updated: {detail['title']}")
         time.sleep(1)
 
     save_state(state)
-    return updated
+    export_for_notebooklm(updated)
 
 
 # ======================
@@ -274,5 +273,4 @@ def main():
 # ======================
 
 if __name__ == "__main__":
-    updated_items = main()
-    export_for_notebooklm(updated_items)
+    main()
