@@ -19,11 +19,11 @@ OUTPUT_FILE = "boca_visa_qa.txt"
 
 
 # ======================
-# 工具函式
+# 共用工具
 # ======================
 
-def content_hash(title, content):
-    raw = title + "||" + "||".join(content)
+def content_hash(title, content, content_type):
+    raw = title + "||" + content_type + "||" + "||".join(content)
     return hashlib.sha256(raw.encode("utf-8")).hexdigest()
 
 
@@ -42,7 +42,7 @@ def save_state(state):
 def detect_category(item):
     title = item["title"]
 
-    if "電子簽證" in title or "eVisa" in title or "e-visa" in title.lower():
+    if "電子簽證" in title or "eVisa" in title.lower():
         return "電子簽證"
     if "APEC" in title:
         return "APEC 商務卡"
@@ -76,51 +76,111 @@ def fetch_list(page):
 
 
 # ======================
-# 內容頁解析
+# 內容頁抽取（三型態）
 # ======================
 
-def extract_cp_content(soup):
+def extract_text_content(soup):
     section = soup.select_one("section.cp")
     if not section:
-        return []
+        return None
 
     contents = []
 
-    # 段落
     for p in section.find_all("p", recursive=False):
         text = p.get_text(strip=True)
         if text:
             contents.append(text)
 
-    # 條列
     for li in section.select("ol li, ul li"):
         text = li.get_text(strip=True)
         if text:
             contents.append(text)
 
-    # fallback
-    if not contents:
-        text = section.get_text(strip=True)
-        if text:
-            contents.append(text)
+    return contents if contents else None
 
-    return contents
+
+def extract_table_content(soup):
+    section = soup.select_one("section.cp")
+    if not section:
+        return None
+
+    tables = section.find_all("table")
+    if not tables:
+        return None
+
+    results = []
+
+    for table in tables:
+        headers = [th.get_text(strip=True) for th in table.find_all("th") if th.get_text(strip=True)]
+
+        for tr in table.find_all("tr"):
+            cells = tr.find_all("td")
+            if not cells:
+                continue
+
+            row = []
+            for i, td in enumerate(cells):
+                value = td.get_text(strip=True)
+                if not value:
+                    continue
+
+                if i < len(headers):
+                    row.append(f"{headers[i]}：{value}")
+                else:
+                    row.append(value)
+
+            if row:
+                results.append("｜".join(row))
+
+    return results if results else None
+
+
+def extract_image_content(soup):
+    section = soup.select_one("section.cp")
+    if not section:
+        return None
+
+    images = []
+    for img in section.select("img"):
+        src = img.get("src")
+        if src:
+            if src.startswith("/"):
+                src = BASE + src
+            images.append(src)
+
+    return images if images else None
 
 
 def fetch_detail(url):
     res = requests.get(url, headers=HEADERS, timeout=15)
     res.raise_for_status()
-
     soup = BeautifulSoup(res.text, "lxml")
 
     title = soup.select_one("h2.title span").get_text(strip=True)
     publish = [li.get_text(strip=True) for li in soup.select("ul.publish_info li")]
-    content = extract_cp_content(soup)
+
+    table = extract_table_content(soup)
+    text = extract_text_content(soup)
+    images = extract_image_content(soup)
+
+    if table:
+        content_type = "table"
+        content = table
+    elif text:
+        content_type = "text"
+        content = text
+    elif images:
+        content_type = "image"
+        content = images
+    else:
+        content_type = "empty"
+        content = []
 
     return {
         "title": title,
         "publish_info": publish,
         "content": content,
+        "content_type": content_type,
         "url": url
     }
 
@@ -136,12 +196,25 @@ def export_for_notebooklm(items, filename=OUTPUT_FILE):
 
     with open(filename, "w", encoding="utf-8") as f:
         for item in items:
-            f.write(f"[分類]：{item['category']}\n\n")
+            f.write(f"[分類]：{item['category']}\n")
+
+            if item["content_type"] == "table":
+                f.write("[內容型態]：表格資料\n\n")
+            elif item["content_type"] == "image":
+                f.write("[內容型態]：流程圖（圖片）\n\n")
+            else:
+                f.write("\n")
+
             f.write(f"Q: {item['title']}\n\n")
             f.write("A:\n")
 
-            for line in item["content"]:
-                f.write(f"- {line}\n")
+            if item["content_type"] == "image":
+                f.write("- 本題內容為官方流程圖，請參考下方圖片。\n")
+                for img in item["content"]:
+                    f.write(f"- 流程圖連結：{img}\n")
+            else:
+                for line in item["content"]:
+                    f.write(f"- {line}\n")
 
             for info in item.get("publish_info", []):
                 if "發布日期" in info:
@@ -169,16 +242,18 @@ def main():
     for item in all_items:
         detail = fetch_detail(item["url"])
         category = detect_category(detail)
-        h = content_hash(detail["title"], detail["content"])
 
+        h = content_hash(detail["title"], detail["content"], detail["content_type"])
         old = state.get(detail["url"])
+
         if old and old["hash"] == h:
-            continue  # 沒變
+            continue
 
         record = {
             "url": detail["url"],
             "title": detail["title"],
             "category": category,
+            "content_type": detail["content_type"],
             "publish_info": detail["publish_info"],
             "content": detail["content"],
             "hash": h
