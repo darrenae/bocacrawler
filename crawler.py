@@ -40,15 +40,15 @@ def save_state(state):
 
 
 def detect_category(title):
-    if "電子簽證" in title or "evisa" in title.lower():
-        return "電子簽證"
+    if "eVisa" in title or "evisa" in title.lower():
+        return "eVisa"
     if "APEC" in title:
-        return "APEC 商務卡"
-    if "居留" in title:
-        return "居留簽證"
-    if "停留" in title:
-        return "停留簽證"
-    return "簽證"
+        return "APEC"
+    if "Resident" in title:
+        return "Resident Visa"
+    if "Visitor" in title:
+        return "Visitor Visa"
+    return "Visa"
 
 
 # ======================
@@ -56,7 +56,8 @@ def detect_category(title):
 # ======================
 
 def fetch_list(page):
-    url = f"{BASE}/lp-390-1-{page}-20.html"
+    # 簽證中文 lp-390-1-{page}-20.html
+    url = f"{BASE}/lp-181-2-{page}-20.html"
     res = requests.get(url, headers=HEADERS, timeout=15)
     res.raise_for_status()
 
