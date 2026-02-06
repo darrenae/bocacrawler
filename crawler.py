@@ -1,9 +1,11 @@
 import requests
 from bs4 import BeautifulSoup
+from bs4.element import NavigableString, Tag
 import time
 import json
 import hashlib
 import os
+import re
 
 # ======================
 # 基本設定
@@ -88,14 +90,54 @@ def extract_text_content(soup):
 
     contents = []
 
-    # 依照 DOM 出現順序抽取文字，避免將段落與清單分開處理導致順序錯亂。
-    for elem in section.select("p, ol li, ul li"):
-        if elem.find_parent("ul", class_="publish_info"):
-            continue
-        if elem.find_parent("table"):
+    def normalize_text(text):
+        return re.sub(r"\s+", " ", text).strip()
+
+    def text_without_nested_lists(node):
+        parts = []
+        for child in node.contents:
+            if isinstance(child, Tag) and child.name in {"ol", "ul"}:
+                continue
+
+            if isinstance(child, NavigableString):
+                text = normalize_text(str(child))
+            elif isinstance(child, Tag):
+                text = normalize_text(child.get_text(" ", strip=True))
+            else:
+                text = ""
+
+            if text:
+                parts.append(text)
+
+        return normalize_text(" ".join(parts))
+
+    def parse_list(list_node, depth=0):
+        indent = "  " * depth
+        is_ordered = list_node.name == "ol"
+
+        for idx, li in enumerate(list_node.find_all("li", recursive=False), start=1):
+            text = text_without_nested_lists(li)
+            if text:
+                prefix = f"{idx}. " if is_ordered else "- "
+                contents.append(f"{indent}{prefix}{text}")
+
+            for nested in li.find_all(["ol", "ul"], recursive=False):
+                parse_list(nested, depth + 1)
+
+    for child in section.children:
+        if not isinstance(child, Tag):
             continue
 
-        text = elem.get_text(strip=True)
+        if child.name in {"script", "style", "table"}:
+            continue
+        if child.name == "ul" and "publish_info" in child.get("class", []):
+            continue
+
+        if child.name in {"ol", "ul"}:
+            parse_list(child)
+            continue
+
+        text = normalize_text(child.get_text(" ", strip=True))
         if text:
             contents.append(text)
 
@@ -224,7 +266,7 @@ def export_for_notebooklm(items):
                     f.write(f"- 流程圖連結：{img}\n")
             else:
                 for line in item["content"]:
-                    f.write(f"- {line}\n")
+                    f.write(f"{line}\n")
 
             for info in item["publish_info"]:
                 if "發布日期" in info:
