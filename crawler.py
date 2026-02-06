@@ -88,15 +88,14 @@ def extract_text_content(soup):
 
     contents = []
 
-    for p in section.find_all("p", recursive=False):
-        text = p.get_text(strip=True)
-        if text:
-            contents.append(text)
-
-    for li in section.select("ol li, ul li"):
-        if li.find_parent("ul", class_="publish_info"):
+    # 依照 DOM 出現順序抽取文字，避免將段落與清單分開處理導致順序錯亂。
+    for elem in section.select("p, ol li, ul li"):
+        if elem.find_parent("ul", class_="publish_info"):
             continue
-        text = li.get_text(strip=True)
+        if elem.find_parent("table"):
+            continue
+
+        text = elem.get_text(strip=True)
         if text:
             contents.append(text)
 
