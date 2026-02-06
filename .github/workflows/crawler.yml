@@ -28,5 +28,5 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: boca-visa-notebooklm_en
-          path: boca_visa_qa.txt.txt
+          path: boca_visa_qa.txt
       
