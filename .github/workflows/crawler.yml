@@ -22,9 +22,7 @@ jobs:
 
       - name: Run crawler
         run: |
-          python crawler.py \
-            --target "https://www.boca.gov.tw/lp-181-2.html" boca-visa-notebooklm_en.txt
-            --target "https://www.boca.gov.tw/lp-390-1.html" boca-visa-notebooklm.txt
+          python crawler.py --target "https://www.boca.gov.tw/lp-181-2.html" boca-visa-notebooklm_en.txt --target "https://www.boca.gov.tw/lp-390-1.html" boca-visa-notebooklm.txt
           
       - name: Upload NotebookLM file
         uses: actions/upload-artifact@v4
