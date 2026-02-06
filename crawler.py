@@ -1,3 +1,4 @@
+import argparse
 import requests
 from bs4 import BeautifulSoup
 from bs4.element import NavigableString, Tag
@@ -23,6 +24,7 @@ OUTPUT_FILE = "boca_visa_qa.txt"
 # ======================
 # 工具函式
 # ======================
+
 
 def content_hash(title, content, content_type):
     raw = title + "||" + content_type + "||" + "||".join(content)
@@ -53,9 +55,48 @@ def detect_category(title):
     return "Visa"
 
 
+def build_full_url(url):
+    if url.startswith("http://") or url.startswith("https://"):
+        return url
+    if url.startswith("/"):
+        return BASE + url
+    return f"{BASE}/{url.lstrip('/')}"
+
+
+def write_single_item_file(item, output_file):
+    with open(output_file, "w", encoding="utf-8") as f:
+        f.write(f"[分類]：{item['category']}\n")
+
+        if item["content_type"] == "table":
+            f.write("[內容型態]：表格資料\n\n")
+        elif item["content_type"] == "image":
+            f.write("[內容型態]：流程圖（圖片）\n\n")
+        else:
+            f.write("\n")
+
+        f.write(f"Q: {item['title']}\n\n")
+        f.write("A:\n")
+
+        if item["content_type"] == "image":
+            f.write("- 本題內容為官方流程圖，請參考下方圖片。\n")
+            for img in item["content"]:
+                f.write(f"- 流程圖連結：{img}\n")
+        else:
+            for line in item["content"]:
+                f.write(f"{line}\n")
+
+        for info in item["publish_info"]:
+            if "發布日期" in info:
+                f.write(f"\n{info}")
+                break
+
+        f.write(f"\n來源：{item['url']}\n")
+
+
 # ======================
 # 列表頁
 # ======================
+
 
 def fetch_list(page):
     # 簽證中文 lp-390-1-{page}-20.html
@@ -78,6 +119,7 @@ def fetch_list(page):
 # ======================
 # 內容抽取（修正版）
 # ======================
+
 
 def extract_text_content(soup):
     """
@@ -199,12 +241,15 @@ def extract_image_content(soup):
 # 單一內容頁
 # ======================
 
+
 def fetch_detail(url):
-    res = requests.get(url, headers=HEADERS, timeout=15)
+    full_url = build_full_url(url)
+    res = requests.get(full_url, headers=HEADERS, timeout=15)
     res.raise_for_status()
     soup = BeautifulSoup(res.text, "lxml")
 
-    title = soup.select_one("h2.title span").get_text(strip=True)
+    title_node = soup.select_one("h2.title span")
+    title = title_node.get_text(strip=True) if title_node else full_url
     publish_info = [
         li.get_text(strip=True)
         for li in soup.select("ul.publish_info li")
@@ -233,13 +278,14 @@ def fetch_detail(url):
         "content_type": content_type,
         "content": content,
         "publish_info": publish_info,
-        "url": url
+        "url": full_url
     }
 
 
 # ======================
 # NotebookLM 輸出
 # ======================
+
 
 def export_for_notebooklm(items):
     if not items:
@@ -277,11 +323,38 @@ def export_for_notebooklm(items):
             f.write("\n" + "=" * 40 + "\n\n")
 
 
+def parse_args():
+    parser = argparse.ArgumentParser(description="BOCA 爬蟲與文字輸出工具")
+    parser.add_argument(
+        "--target",
+        nargs=2,
+        metavar=("URL", "OUTPUT_TXT"),
+        action="append",
+        help="指定單一網頁與輸出檔案，可重複使用多次。",
+    )
+    return parser.parse_args()
+
+
+def run_custom_targets(targets):
+    for url, output_file in targets:
+        print(f"Fetching custom page: {url}")
+        detail = fetch_detail(url)
+        write_single_item_file(detail, output_file)
+        print(f"Wrote: {output_file}")
+
+
 # ======================
 # 主流程（含 diff）
 # ======================
 
+
 def main():
+    args = parse_args()
+
+    if args.target:
+        run_custom_targets(args.target)
+        return
+
     state = load_state()
     updated = []
 
